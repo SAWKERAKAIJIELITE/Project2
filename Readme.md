@@ -4,7 +4,9 @@
 fastapi dev main.py
 ```
 
-## You have to Install this Packages:
+## Make Directory and name it Storage
+
+## You have to Install these Packages:
 
 fastapi==0.111.1
 
