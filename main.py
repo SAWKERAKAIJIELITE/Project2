@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from os import mkdir, listdir, remove
 from typing import Annotated, Mapping
 from sqlalchemy.orm import Session
-from fastapi import Body, FastAPI, status, Depends, HTTPException, UploadFile, Query
+from fastapi import Body, FastAPI, status, Depends, HTTPException, UploadFile, Query, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -125,15 +125,24 @@ app = FastAPI()
 
 
 @app.post('/new/user')
-def sign_up(user: schemas.UserCreate, db: Annotated[Session, Depends(get_db)]) -> ResponseModel:
+def sign_up(
+        username: Annotated[str, Form()],
+        email: Annotated[str, Form()],
+        password: Annotated[str, Form()],
+        # user: schemas.UserCreate,
+        db: Annotated[Session, Depends(get_db)]
+) -> ResponseModel:
 
-    db_user = crud.get_user_by_email(db, email=user.email)
+    db_user = crud.get_user_by_email(db, email=email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    db_user = crud.create_user(db=db, user=user)
+    db_user = crud.create_user(
+        db,
+        schemas.UserCreate(username=username, email=email, password=password)
+    )
 
-    token = generate_token(user.username)
+    token = generate_token(username)
 
     d = {"id": db_user.id, "username": db_user.username, "email": db_user.email}
 
@@ -141,20 +150,25 @@ def sign_up(user: schemas.UserCreate, db: Annotated[Session, Depends(get_db)]) -
 
 
 @app.post("/login")
-def log_in(user: LoginUser, db: Annotated[Session, Depends(get_db)]) -> ResponseModel:
+def log_in(
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    # user: LoginUser,
+    db: Annotated[Session, Depends(get_db)]
+) -> ResponseModel:
 
-    db_user = crud.get_user_by_username(db, user.username)
+    db_user = crud.get_user_by_username(db, username)
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if not verify_password(user.password, db_user.hashed_password):
+    if not verify_password(password, db_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = generate_token(user.username)
+    token = generate_token(username)
 
     d = {"id": db_user.id, "username": db_user.username, "email": db_user.email}
 
@@ -261,13 +275,15 @@ def delete_document(
 def create_note_for_document(
     db_user: Annotated[schemas.User, Depends(handle_token)],
     document_id: int,
-    note: schemas.NoteBase,
+    name: Annotated[str, Form()],
+    content: Annotated[str, Form()],
+    # note: schemas.NoteBase,
     db: Session = Depends(get_db)
 ):
     # TODO Ensure that param(document_id) exist in User Documents' ids
     now = datetime.now(timezone.utc)
     note_in = schemas.NoteCreate(
-        name=note.name, content=note.content, created_at=now, updated_at=now
+        name=name, content=content, created_at=now, updated_at=now
     )
     db_note = crud.create_document_note(db, note_in, document_id)
     if db_note:
