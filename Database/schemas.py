@@ -22,7 +22,7 @@ class Note(NoteBase):
 
 class DocumentBase(BaseModel):
     name: str
-    typ: str = Field(pattern="transcription|structuring")
+    typ: str = Field(pattern="^video$|^file$")
 
 
 class DocumentCreate(DocumentBase):

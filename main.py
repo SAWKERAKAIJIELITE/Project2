@@ -14,6 +14,7 @@ from passlib.context import CryptContext
 from Database.Operations import crud
 from Database import models, schemas
 from Database.database import SessionLocal, engine
+import requests
 
 
 class LoginUser(BaseModel):
@@ -46,6 +47,8 @@ class ResponseModel(JSONResponse):
             status_code, headers, media_type, background
         )
 
+
+ngrokURL = 'https://9593-104-155-195-97.ngrok-free.app'
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -175,21 +178,46 @@ def log_in(
     return ResponseModel("login finished Successfully", token.model_dump(), d, status_code=status.HTTP_200_OK)
 
 
-@app.post("/users/me/documents/new")
+@app.post("/users/me/documents/new/{algorithm}")
 async def create_document_for_user(
     db_user: Annotated[schemas.User, Depends(handle_token)],
     document_name: Annotated[str, Query()],
-    document_typ: Annotated[str, Query()],
+    document_typ: Annotated[str, Field(pattern="^video$|^file$")],
     video: UploadFile,
+    additional: Annotated[bool, Query()],
+    algorithm: Annotated[str, Field(pattern="^kmeans$|^hdbscan$|^summary$")],
+    param1: Annotated[int | None, Form()] = None,
     db: Session = Depends(get_db)
 ):
     content = await video.read()
     # TODO Send Content to the Model
+
+    if additional:
+        response = requests.post(
+            ngrokURL + f"/{document_typ}/kmeans/predict/",
+            files={"file": content},
+            timeout=1_000_000
+        )
+    elif algorithm != 'hdbscan':
+        response = requests.post(
+            ngrokURL + f"/{document_typ}/{algorithm}/",
+            files={"file": content},
+            data={'param1': param1},
+            timeout=1_000_000
+        )
+    else:
+        response = requests.post(
+            ngrokURL + f"/{document_typ}/hdbscan/",
+            files={"file": content},
+            timeout=1_000_000
+        )
+
     list_dir = listdir('./Storage/')
     if db_user.username not in list_dir:
         mkdir(f'./Storage/{db_user.username}')
 
-    video_path = f'./Storage/{db_user.username}/'+video.filename
+    video_path = f'./Storage/{db_user.username}/' + video.filename + \
+        f'{document_typ}{algorithm}{str(param1 if param1 is not None else 0)}.txt'
     try:
         f = open(video_path, 'x')
     except FileExistsError as exc:
@@ -199,7 +227,7 @@ async def create_document_for_user(
         ) from exc
 
     # TODO Recieve the Generated Content to the File
-    f.write(content.hex())
+    f.write(dict(response.json())["generated_text"])
     f.close()
 
     now = datetime.now(timezone.utc)
